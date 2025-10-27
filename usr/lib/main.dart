@@ -31,7 +31,6 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  FlutterBluePlus flutterBlue = FlutterBluePlus();
   List<ScanResult> _scanResults = [];
   BluetoothDevice? _connectedDevice;
   BluetoothCharacteristic? _writeCharacteristic;
@@ -63,8 +62,8 @@ class _MyHomePageState extends State<MyHomePage> {
       _isScanning = true;
       _scanResults = [];
     });
-    flutterBlue.startScan(timeout: const Duration(seconds: 5));
-    flutterBlue.scanResults.listen((results) {
+    FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+    FlutterBluePlus.scanResults.listen((results) {
       setState(() {
         _scanResults = results
             .where((r) => r.device.platformName.isNotEmpty)
@@ -72,7 +71,7 @@ class _MyHomePageState extends State<MyHomePage> {
       });
     });
     Future.delayed(const Duration(seconds: 5), () {
-      flutterBlue.stopScan();
+      FlutterBluePlus.stopScan();
       setState(() {
         _isScanning = false;
       });
