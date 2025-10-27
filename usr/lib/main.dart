@@ -41,6 +41,7 @@ class _MyHomePageState extends State<MyHomePage> {
   String _dtcData = "N/A";
   bool _isScanning = false;
   bool _isConnected = false;
+  String _errorMessage = "";
 
   // Server URL to send data to
   final String _serverUrl = "YOUR_SERVER_URL_HERE"; // TODO: Replace with your server URL
@@ -48,7 +49,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    _startScan();
+    _checkBluetoothState();
   }
 
   @override
@@ -57,84 +58,127 @@ class _MyHomePageState extends State<MyHomePage> {
     super.dispose();
   }
 
-  void _startScan() {
-    setState(() {
-      _isScanning = true;
-      _scanResults = [];
-    });
-    FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
-    FlutterBluePlus.scanResults.listen((results) {
-      setState(() {
-        _scanResults = results
-            .where((r) => r.device.platformName.isNotEmpty)
-            .toList();
-      });
-    });
-    Future.delayed(const Duration(seconds: 5), () {
-      FlutterBluePlus.stopScan();
-      setState(() {
-        _isScanning = false;
-      });
+  void _checkBluetoothState() {
+    FlutterBluePlus.adapterState.listen((state) {
+      if (state == BluetoothAdapterState.on) {
+        setState(() {
+          _errorMessage = "";
+        });
+      } else {
+        setState(() {
+          _errorMessage = "Bluetooth is turned off. Please enable Bluetooth to use this app.";
+        });
+      }
     });
   }
 
-  Future<void> _connectToDevice(BluetoothDevice device) async {
-    await device.connect();
+  void _startScan() {
+    if (_errorMessage.isNotEmpty) return;
     setState(() {
-      _connectedDevice = device;
-      _isConnected = true;
+      _isScanning = true;
+      _scanResults = [];
+      _errorMessage = "";
     });
+    try {
+      FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+      FlutterBluePlus.scanResults.listen((results) {
+        setState(() {
+          _scanResults = results
+              .where((r) => r.device.platformName.isNotEmpty)
+              .toList();
+        });
+      });
+      Future.delayed(const Duration(seconds: 5), () {
+        FlutterBluePlus.stopScan();
+        setState(() {
+          _isScanning = false;
+        });
+      });
+    } catch (e) {
+      setState(() {
+        _isScanning = false;
+        _errorMessage = "Error starting scan: $e";
+      });
+    }
+  }
 
-    List<BluetoothService> services = await device.discoverServices();
-    for (var service in services) {
-      for (var characteristic in service.characteristics) {
-        if (characteristic.properties.write) {
-          _writeCharacteristic = characteristic;
-        }
-        if (characteristic.properties.notify || characteristic.properties.read) {
-          _readCharacteristic = characteristic;
+  Future<void> _connectToDevice(BluetoothDevice device) async {
+    try {
+      await device.connect();
+      setState(() {
+        _connectedDevice = device;
+        _isConnected = true;
+        _errorMessage = "";
+      });
+
+      List<BluetoothService> services = await device.discoverServices();
+      for (var service in services) {
+        for (var characteristic in service.characteristics) {
+          if (characteristic.properties.write) {
+            _writeCharacteristic = characteristic;
+          }
+          if (characteristic.properties.notify || characteristic.properties.read) {
+            _readCharacteristic = characteristic;
+          }
         }
       }
-    }
 
-    if (_readCharacteristic != null) {
-      await _readCharacteristic!.setNotifyValue(true);
-      _readSubscription = _readCharacteristic!.value.listen((value) {
-        String response = utf8.decode(value);
-        // Process incoming data here
-        print("Received: $response");
-        // For simplicity, we'll just display raw data.
-        // In a real app, you'd parse this based on the command sent.
-        if (response.contains("41 0C")) { // RPM response
-           setState(() {
-             _realTimeData = response;
-           });
-        } else if (response.contains("43")) { // DTC response
-           setState(() {
-             _dtcData = response;
-           });
-        }
-        _sendDataToServer("raw_response", response);
+      if (_readCharacteristic != null) {
+        await _readCharacteristic!.setNotifyValue(true);
+        _readSubscription = _readCharacteristic!.value.listen((value) {
+          String response = utf8.decode(value);
+          // Process incoming data here
+          print("Received: $response");
+          // For simplicity, we'll just display raw data.
+          // In a real app, you'd parse this based on the command sent.
+          if (response.contains("41 0C")) { // RPM response
+             setState(() {
+               _realTimeData = response;
+             });
+          } else if (response.contains("43")) { // DTC response
+             setState(() {
+               _dtcData = response;
+             });
+          }
+          _sendDataToServer("raw_response", response);
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = "Error connecting to device: $e";
       });
     }
   }
 
   Future<void> _disconnectFromDevice() async {
-    if (_connectedDevice != null) {
-      await _connectedDevice!.disconnect();
+    try {
+      if (_connectedDevice != null) {
+        await _connectedDevice!.disconnect();
+        setState(() {
+          _connectedDevice = null;
+          _isConnected = false;
+          _realTimeData = "N/A";
+          _dtcData = "N/A";
+          _errorMessage = "";
+        });
+      }
+    } catch (e) {
       setState(() {
-        _connectedDevice = null;
-        _isConnected = false;
-        _realTimeData = "N/A";
-        _dtcData = "N/A";
+        _errorMessage = "Error disconnecting: $e";
       });
     }
   }
 
   Future<void> _sendCommand(String command) async {
     if (_writeCharacteristic != null) {
-      List<int> bytes = utf8.encode('$command\r\n');
-      await _writeCharacteristic!.write(bytes);
+      try {
+        List<int> bytes = utf8.encode('$command\r\n');
+        await _writeCharacteristic!.write(bytes);
+      } catch (e) {
+        setState(() {
+          _errorMessage = "Error sending command: $e";
+        });
+      }
     }
   }
 
@@ -198,6 +242,26 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _buildBody() {
+    if (_errorMessage.isNotEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(_errorMessage, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _startScan,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (_isConnected) {
       return _buildConnectedView();
     } else {
@@ -222,6 +286,10 @@ class _MyHomePageState extends State<MyHomePage> {
             },
           ),
         ),
+        if (_scanResults.isEmpty && !_isScanning)
+          const Center(
+            child: Text("No devices found. Make sure your ELM327 device is powered on and in pairing mode."),
+          )
       ],
     );
   }
