@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:http/http.dart' as http;
+import 'package:http/http.dart' as http';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MyApp());
@@ -17,20 +18,336 @@ class MyApp extends StatelessWidget {
       title: 'ELM327 Bluetooth App',
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+        fontFamily: 'Roboto',
       ),
-      home: const MyHomePage(),
+      debugShowCheckedModeBanner: false,
+      home: const AuthWrapper(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key});
+class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<AuthWrapper> createState() => _AuthWrapperState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _isLoggedIn = false;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLoginStatus();
+  }
+
+  Future<void> _checkLoginStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+    setState(() {
+      _isLoggedIn = isLoggedIn;
+      _isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return _isLoggedIn ? const MainScreen() : const LoginScreen();
+  }
+}
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLogin = true;
+  bool _isLoading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.blue, Colors.lightBlueAccent],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.car_repair, size: 80, color: Colors.white),
+                const SizedBox(height: 24),
+                const Text(
+                  'ELM327 Scanner',
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 48),
+                Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: _emailController,
+                          decoration: const InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: Icon(Icons.email),
+                          ),
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _passwordController,
+                          decoration: const InputDecoration(
+                            labelText: 'Password',
+                            prefixIcon: Icon(Icons.lock),
+                          ),
+                          obscureText: true,
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _authenticate,
+                            style: ElevatedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: _isLoading
+                                ? const CircularProgressIndicator(color: Colors.white)
+                                : Text(_isLogin ? 'Login' : 'Register'),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _isLogin = !_isLogin;
+                            });
+                          },
+                          child: Text(
+                            _isLogin
+                                ? 'Don\'t have an account? Register'
+                                : 'Already have an account? Login',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _authenticate() async {
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in all fields')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // Simulate authentication (replace with real auth later)
+    await Future.delayed(const Duration(seconds: 2));
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isLoggedIn', true);
+    await prefs.setString('userEmail', _emailController.text);
+
+    setState(() => _isLoading = false);
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const MainScreen()),
+    );
+  }
+}
+
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  int _selectedIndex = 0;
+
+  static const List<Widget> _screens = [
+    HomeScreen(),
+    ConnectingScreen(),
+    SettingsScreen(),
+  ];
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _screens[_selectedIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bluetooth),
+            label: 'Connect',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Settings',
+          ),
+        ],
+        currentIndex: _selectedIndex,
+        selectedItemColor: Colors.blue,
+        onTap: _onItemTapped,
+      ),
+      floatingActionButton: _selectedIndex == 0
+          ? FloatingActionButton(
+              onPressed: () {},
+              child: const Icon(Icons.add),
+            )
+          : null,
+    );
+  }
+}
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Dashboard'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              );
+            },
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Welcome to ELM327 Scanner',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            Card(
+              elevation: 4,
+              child: ListTile(
+                leading: const Icon(Icons.bluetooth_connected, color: Colors.green),
+                title: const Text('Device Status'),
+                subtitle: const Text('Not Connected'),
+                trailing: const Icon(Icons.arrow_forward_ios),
+                onTap: () {
+                  // Navigate to connecting screen
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ConnectingScreen()),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Recent Data',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView(
+                children: const [
+                  Card(
+                    child: ListTile(
+                      title: Text('RPM'),
+                      subtitle: Text('Last reading: 2500 RPM'),
+                      trailing: Text('2 min ago'),
+                    ),
+                  ),
+                  Card(
+                    child: ListTile(
+                      title: Text('Engine Temp'),
+                      subtitle: Text('Last reading: 85°C'),
+                      trailing: Text('5 min ago'),
+                    ),
+                  ),
+                  Card(
+                    child: ListTile(
+                      title: Text('DTC Codes'),
+                      subtitle: Text('No codes detected'),
+                      trailing: Text('10 min ago'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ConnectingScreen extends StatefulWidget {
+  const ConnectingScreen({super.key});
+
+  @override
+  State<ConnectingScreen> createState() => _ConnectingScreenState();
+}
+}
+
+class _ConnectingScreenState extends State<ConnectingScreen> {
   List<ScanResult> _scanResults = [];
   BluetoothDevice? _connectedDevice;
   BluetoothCharacteristic? _writeCharacteristic;
@@ -223,17 +540,12 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ELM327 OBD2 Scanner'),
+        title: const Text('Connect to ELM327'),
         actions: [
           if (_isConnected)
             IconButton(
               icon: const Icon(Icons.bluetooth_disabled),
               onPressed: _disconnectFromDevice,
-            )
-          else if (!_isScanning)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _startScan,
             )
         ],
       ),
@@ -272,23 +584,65 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget _buildDeviceListView() {
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              const Text(
+                'Scan for ELM327 Devices',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Make sure your ELM327 device is powered on and in pairing mode.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: _isScanning ? null : _startScan,
+                  icon: const Icon(Icons.search),
+                  label: Text(_isScanning ? 'Scanning...' : 'Scan for Devices'),
+                  style: ElevatedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         if (_isScanning) const LinearProgressIndicator(),
         Expanded(
           child: ListView.builder(
             itemCount: _scanResults.length,
             itemBuilder: (context, index) {
               final result = _scanResults[index];
-              return ListTile(
-                title: Text(result.device.platformName),
-                subtitle: Text(result.device.remoteId.toString()),
-                onTap: () => _connectToDevice(result.device),
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: ListTile(
+                  leading: const Icon(Icons.bluetooth, color: Colors.blue),
+                  title: Text(result.device.platformName),
+                  subtitle: Text(result.device.remoteId.toString()),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () => _connectToDevice(result.device),
+                ),
               );
             },
           ),
         ),
         if (_scanResults.isEmpty && !_isScanning)
-          const Center(
-            child: Text("No devices found. Make sure your ELM327 device is powered on and in pairing mode."),
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              "No devices found. Make sure your ELM327 device is powered on and in pairing mode.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
           )
       ],
     );
@@ -300,21 +654,234 @@ class _MyHomePageState extends State<MyHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Connected to: ${_connectedDevice?.platformName ?? 'Unknown'}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _getRealTimeData,
-            child: const Text("Get Real-time Data (RPM)"),
+          Card(
+            color: Colors.green.shade50,
+            child: ListTile(
+              leading: const Icon(Icons.bluetooth_connected, color: Colors.green),
+              title: Text("Connected to: ${_connectedDevice?.platformName ?? 'Unknown'}"),
+              subtitle: const Text('Device is ready'),
+            ),
           ),
-          const SizedBox(height: 10),
-          Text("Real-time Data: $_realTimeData"),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _getDTCs,
-            child: const Text("Get Diagnostic Trouble Codes"),
+          const SizedBox(height: 24),
+          const Text(
+            'Real-time Diagnostics',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 10),
-          Text("DTCs: $_dtcData"),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _getRealTimeData,
+                  icon: const Icon(Icons.speed),
+                  label: const Text("Get RPM"),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _getDTCs,
+                  icon: const Icon(Icons.warning),
+                  label: const Text("Get DTCs"),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Latest Data', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.speed, color: Colors.blue),
+                      const SizedBox(width: 8),
+                      const Text('RPM: ', style: TextStyle(fontWeight: FontWeight.w500)),
+                      Text(_realTimeData),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.warning, color: Colors.orange),
+                      const SizedBox(width: 8),
+                      const Text('DTCs: ', style: TextStyle(fontWeight: FontWeight.w500)),
+                      Expanded(child: Text(_dtcData)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final _serverUrlController = TextEditingController(text: 'YOUR_SERVER_URL_HERE');
+  bool _autoSendData = false;
+  String _selectedTheme = 'Light';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _serverUrlController.text = prefs.getString('serverUrl') ?? 'YOUR_SERVER_URL_HERE';
+      _autoSendData = prefs.getBool('autoSendData') ?? false;
+      _selectedTheme = prefs.getString('theme') ?? 'Light';
+    });
+  }
+
+  Future<void> _saveSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('serverUrl', _serverUrlController.text);
+    await prefs.setBool('autoSendData', _autoSendData);
+    await prefs.setString('theme', _selectedTheme);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Settings saved!')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Settings'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: _saveSettings,
+          ),
+        ],
+      ),
+      body: ListView(
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Server Configuration',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: TextField(
+                controller: _serverUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'Server URL',
+                  hintText: 'https://your-server.com/api/data',
+                  prefixIcon: Icon(Icons.link),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: SwitchListTile(
+              title: const Text('Auto-send Data'),
+              subtitle: const Text('Automatically send data to server when received'),
+              value: _autoSendData,
+              onChanged: (value) {
+                setState(() {
+                  _autoSendData = value;
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Appearance',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: ListTile(
+              title: const Text('Theme'),
+              subtitle: Text(_selectedTheme),
+              trailing: const Icon(Icons.arrow_forward_ios),
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => SimpleDialog(
+                    title: const Text('Select Theme'),
+                    children: ['Light', 'Dark', 'System'].map((theme) {
+                      return SimpleDialogOption(
+                        onPressed: () {
+                          setState(() {
+                            _selectedTheme = theme;
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: Text(theme),
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'About',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            child: const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('ELM327 Bluetooth Scanner', style: TextStyle(fontWeight: FontWeight.bold)),
+                  SizedBox(height: 8),
+                  Text('Version 1.0.0'),
+                  SizedBox(height: 4),
+                  Text('Connect to ELM327 diagnostic equipment via Bluetooth and send real-time data to a server.'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
         ],
       ),
     );
